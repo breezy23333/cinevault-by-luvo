@@ -69,7 +69,7 @@ export default function Footer() {
         </div>
 
         <div className="mt-8 pt-6 border-t border-white/10 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-white/60">
-          <div>© {year} CineVault by Luvo Maphela. All rights reserved.</div>
+        
           <div className="flex items-center gap-4">
             <Link href="/terms" className="hover:underline">Terms</Link>
             <Link href="/privacy" className="hover:underline">Privacy</Link>

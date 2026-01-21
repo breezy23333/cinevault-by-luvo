@@ -1,4 +1,6 @@
 // app/page.tsx
+export const dynamic = "force-dynamic";
+
 import {
   getPopularMovies,
   getTrendingAll,
@@ -7,11 +9,9 @@ import {
 
 import HeroCarousel from "@/components/HeroCarousel";
 import CategoriesTray from "@/components/CategoriesTray";
-import dynamic from "next/dynamic";
+import dynamicImport from "next/dynamic";
 import type { ReactNode } from "react";
 import type { NewsItem } from "@/components/NewsStrip";
-
-export const revalidate = 120;
 
 /* ---------------- types ---------------- */
 
@@ -32,14 +32,6 @@ const tmdbImg = (
   p?: string | null,
   size: "w342" | "w500" | "w780" | "w1280" = "w780"
 ) => (p ? `https://image.tmdb.org/t/p/${size}${p}` : null);
-
-const withTimeout = <T,>(p: Promise<T>, ms = 8000, label = "fetch") =>
-  Promise.race<T>([
-    p,
-    new Promise<T>((_, rej) =>
-      setTimeout(() => rej(new Error(`${label} timeout`)), ms)
-    ) as any,
-  ]);
 
 const uniqueById = <T extends { id: number }>(arr: T[]) => {
   const seen = new Set<number>();
@@ -91,20 +83,14 @@ const toNews = (x: any): NewsItem => ({
     tmdbImg(x.poster_path, "w780"),
 });
 
-/* ---------------- constants ---------------- */
-
-const MAX_HEROES = 6;
-const MAX_SHELF = 18;
-const MAX_NEWS = 12;
-
 /* ---------------- dynamic components ---------------- */
 
-const ShelfRow = dynamic(() => import("@/components/ShelfRow"), {
+const ShelfRow = dynamicImport(() => import("@/components/ShelfRow"), {
   ssr: true,
   loading: () => <RowSkeleton />,
 });
 
-const NewsStrip = dynamic(() => import("@/components/NewsStrip"), {
+const NewsStrip = dynamicImport(() => import("@/components/NewsStrip"), {
   ssr: true,
   loading: () => <RowSkeleton />,
 });
@@ -112,60 +98,65 @@ const NewsStrip = dynamic(() => import("@/components/NewsStrip"), {
 /* ---------------- page ---------------- */
 
 export default async function Home() {
-  const [popularRes, trendingRes, genreRes] = await Promise.allSettled([
-    withTimeout(getPopularMovies(1), 8000, "popular"),
-    withTimeout(getTrendingAll(1), 8000, "trending"),
-    withTimeout(getMovieGenres(), 8000, "genres"),
-  ]);
+  try {
+    const [popularRes, trendingRes, genreRes] = await Promise.allSettled([
+      getPopularMovies(1),
+      getTrendingAll(1),
+      getMovieGenres(),
+    ]);
 
-  const popularRaw =
-    popularRes.status === "fulfilled" && Array.isArray(popularRes.value?.results)
-      ? popularRes.value.results
-      : [];
+    const popularRaw =
+      popularRes.status === "fulfilled" ? popularRes.value?.results ?? [] : [];
 
-  const trendingRaw =
-    trendingRes.status === "fulfilled" && Array.isArray(trendingRes.value?.results)
-      ? trendingRes.value.results
-      : [];
+    const trendingRaw =
+      trendingRes.status === "fulfilled" ? trendingRes.value?.results ?? [] : [];
 
-  const genres =
-    genreRes.status === "fulfilled" && Array.isArray(genreRes.value)
-      ? genreRes.value
-      : [];
+    const genres =
+      genreRes.status === "fulfilled" && Array.isArray(genreRes.value)
+        ? genreRes.value
+        : [];
 
-  const heroes = uniqueById([
-    ...normalize(trendingRaw),
-    ...normalize(popularRaw),
-  ])
-    .filter((x) => x.backdrop)
-    .slice(0, MAX_HEROES);
+    const heroes = uniqueById([
+      ...normalize(trendingRaw),
+      ...normalize(popularRaw),
+    ])
+      .filter((x) => x.backdrop)
+      .slice(0, 6);
 
-  const popularShelf = popularRaw.slice(0, MAX_SHELF).map(toShelfItem);
-  const trendingShelf = trendingRaw.slice(0, MAX_SHELF).map(toShelfItem);
+    return (
+      <main className="pb-10">
+        <HeroCarousel items={heroes} />
 
-  return (
-    <main className="pb-10">
-      <HeroCarousel items={heroes} />
+        <Surface>
+          <div className="space-y-6">
+            {genres.length > 0 && <CategoriesTray genres={genres} />}
 
-      <Surface>
-        <div className="space-y-6">
-          {genres.length > 0 && <CategoriesTray genres={genres} />}
+            <Panel title="More movies">
+              <ShelfRow items={popularRaw.slice(0, 18).map(toShelfItem)} />
+            </Panel>
 
-          <Panel title="More movies">
-            <ShelfRow items={popularShelf} />
-          </Panel>
+            <Panel title="Trending movies">
+              <ShelfRow items={trendingRaw.slice(0, 18).map(toShelfItem)} />
+            </Panel>
 
-          <Panel title="Trending movies">
-            <ShelfRow items={trendingShelf} />
-          </Panel>
-
-          <Panel title="Top news">
-            <NewsStrip items={trendingRaw.slice(0, MAX_NEWS).map(toNews)} />
-          </Panel>
-        </div>
-      </Surface>
-    </main>
-  );
+            <Panel title="Top news">
+              <NewsStrip items={trendingRaw.slice(0, 12).map(toNews)} />
+            </Panel>
+          </div>
+        </Surface>
+      </main>
+    );
+  } catch {
+    // 🚑 HARD FAIL SAFE — prevents 404
+    return (
+      <main className="p-8">
+        <h1 className="text-2xl font-bold">CineVault</h1>
+        <p className="text-zinc-400 mt-2">
+          Content is temporarily unavailable. Please refresh.
+        </p>
+      </main>
+    );
+  }
 }
 
 /* ---------------- UI helpers ---------------- */
@@ -205,4 +196,3 @@ function RowSkeleton() {
     </div>
   );
 }
-

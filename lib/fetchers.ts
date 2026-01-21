@@ -1,21 +1,29 @@
-// lib/fetchers.ts — unified + robust TMDB client
+// lib/fetchers.ts — unified + robust TMDB client (CLEAN)
 
 const BASE = "https://api.themoviedb.org/3";
 
-// prefer v4 bearer; fall back to v3 key
+// Prefer v4 bearer; fall back to v3 key
 const TMDB_BEARER =
-  process.env.TMDB_BEARER || process.env.TMDB_TOKEN || process.env.NEXT_PUBLIC_TMDB_TOKEN;
+  process.env.TMDB_BEARER ||
+  process.env.TMDB_TOKEN ||
+  process.env.NEXT_PUBLIC_TMDB_TOKEN;
+
 const TMDB_V3 = process.env.TMDB_API_KEY;
 
-// knobs (can override via .env.local)
-const DEFAULT_TIMEOUT = Number(process.env.TMDB_TIMEOUT_MS || 20000); // 20s
-const MAX_RETRIES     = Number(process.env.TMDB_RETRIES    || 1);     // one retry
+// Tunables
+const DEFAULT_TIMEOUT = Number(process.env.TMDB_TIMEOUT_MS || 20000);
+const MAX_RETRIES = Number(process.env.TMDB_RETRIES || 1);
 
-/** Build a URL with optional query params (adds v3 api_key if no bearer) */
+/* ----------------------------------------
+   Helpers
+----------------------------------------- */
+
 function toURL(path: string, params?: Record<string, any>) {
   const url = new URL(`${BASE}${path}`);
   for (const [k, v] of Object.entries(params || {})) {
-    if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, String(v));
+    if (v !== undefined && v !== null && v !== "") {
+      url.searchParams.set(k, String(v));
+    }
   }
   if (!TMDB_BEARER && TMDB_V3 && !url.searchParams.has("api_key")) {
     url.searchParams.set("api_key", TMDB_V3);
@@ -23,7 +31,11 @@ function toURL(path: string, params?: Record<string, any>) {
   return url.toString();
 }
 
-async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number) {
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number
+) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -34,17 +46,25 @@ async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: numbe
 }
 
 function isNonCritical(path: string) {
-  return /\/(videos|images|credits|similar|recommendations|watch\/providers)\b/.test(path);
+  return /\/(videos|images|credits|similar|recommendations|watch\/providers)\b/.test(
+    path
+  );
 }
 
-/** Core TMDB fetcher with timeout + retry + graceful fallbacks */
+/* ----------------------------------------
+   Core TMDB fetcher (SINGLE definition)
+----------------------------------------- */
+
 async function tmdb(
   path: string,
   params?: Record<string, any>,
-  { revalidate = 300, timeoutMs = DEFAULT_TIMEOUT }: { revalidate?: number; timeoutMs?: number } = {}
+  {
+    revalidate = 300,
+    timeoutMs = DEFAULT_TIMEOUT,
+  }: { revalidate?: number; timeoutMs?: number } = {}
 ) {
   if (!TMDB_BEARER && !TMDB_V3) {
-    throw new Error("TMDB credentials missing. Set TMDB_BEARER (v4) or TMDB_API_KEY (v3) in .env.local");
+    throw new Error("TMDB credentials missing");
   }
 
   const headers = TMDB_BEARER
@@ -52,67 +72,85 @@ async function tmdb(
     : { Accept: "application/json" };
 
   const url = toURL(path, params);
+  let lastErr: any;
 
-  let lastErr: any = null;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const res = await fetchWithTimeout(url, { headers, next: { revalidate } }, timeoutMs);
+      const res = await fetchWithTimeout(
+        url,
+        { headers, next: { revalidate } },
+        timeoutMs
+      );
+
       if (!res.ok) {
-        if ((res.status === 404 || res.status === 408) && isNonCritical(path)) return { results: [] };
-        let msg = `TMDB ${res.status} — ${path}`;
-        try {
-          const body = await res.json();
-          if (body?.status_message) msg += `: ${body.status_message}`;
-        } catch {}
-        throw new Error(msg);
+        if (
+          (res.status === 404 || res.status === 408) &&
+          isNonCritical(path)
+        ) {
+          return { results: [] };
+        }
+        throw new Error(`TMDB ${res.status} — ${path}`);
       }
+
       return await res.json();
-    // inside tmdb() catch
-} catch (err: any) {
-  lastErr = err;
+    } catch (err: any) {
+      lastErr = err;
 
-  // Treat timeouts, aborts, DNS/TLS and generic undici errors as network issues
-  const msg = String(err?.message || err);
-  const isNetwork =
-    err?.name === "AbortError" ||
-    /aborted|timeout|fetch failed|ECONN|ENOTFOUND|EAI_AGAIN|UND_ERR/i.test(msg);
+      const isNetwork =
+        err?.name === "AbortError" ||
+        /timeout|fetch failed|ECONN|ENOTFOUND|UND_ERR/i.test(
+          String(err?.message)
+        );
 
-  if (isNetwork && attempt < MAX_RETRIES) {
-    await new Promise(r => setTimeout(r, 600 * (attempt + 1))); // tiny backoff
-    continue;
+      if (isNetwork && attempt < MAX_RETRIES) {
+        await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
+        continue;
+      }
+
+      if (isNetwork && isNonCritical(path)) {
+        return { results: [] };
+      }
+
+      throw err;
+    }
   }
 
-  // For non-critical endpoints, keep the UI alive with empty data
-  if (isNetwork && isNonCritical(path)) return { results: [] };
-
-  // Bubble up a cleaner error for details endpoints
-  if (isNetwork) throw new Error(`TMDB network error on ${path}`);
-
-  throw err;
-}
-
-  }
   throw lastErr;
 }
 
-/* ===========================
-   Public helpers (same names)
-   =========================== */
+/* ----------------------------------------
+   PUBLIC EXPORTS
+----------------------------------------- */
 
-// Home/listing
+// Home / listings
 export async function getTrendingAll(page = 1) {
   return tmdb("/trending/all/day", { page }, { revalidate: 120 });
 }
+
 export async function getPopularMovies(page = 1) {
   return tmdb("/movie/popular", { page }, { revalidate: 120 });
 }
+
 export async function searchTitles(q: string, page = 1) {
-  return tmdb("/search/multi", { query: q, include_adult: false, page }, { revalidate: 60 });
+  return tmdb(
+    "/search/multi",
+    { query: q, include_adult: false, page },
+    { revalidate: 60 }
+  );
 }
 
 // Discover + genres
-export type DiscoverParams = { year?: number; genreId?: number; page?: number };
-export async function discoverMovies({ year, genreId, page = 1 }: DiscoverParams = {}) {
+export type DiscoverParams = {
+  year?: number;
+  genreId?: number;
+  page?: number;
+};
+
+export async function discoverMovies({
+  year,
+  genreId,
+  page = 1,
+}: DiscoverParams = {}) {
   return tmdb(
     "/discover/movie",
     {
@@ -126,12 +164,17 @@ export async function discoverMovies({ year, genreId, page = 1 }: DiscoverParams
     { revalidate: 120 }
   );
 }
+
 export async function getMovieGenres() {
-  const data = await tmdb("/genre/movie/list", { language: "en-US" }, { revalidate: 360 });
+  const data = await tmdb(
+    "/genre/movie/list",
+    { language: "en-US" },
+    { revalidate: 360 }
+  );
   return Array.isArray(data?.genres) ? data.genres : [];
 }
 
-// Detail (movie/tv-agnostic)
+// Movie / TV details
 export async function fetchTmdbTitle(
   tmdbId: number | string,
   type: "movie" | "tv",
@@ -148,20 +191,46 @@ export async function fetchTmdbTitle(
     { revalidate: 300 }
   );
 }
-export async function fetchTmdbProviders(tmdbId: number | string, type: "movie" | "tv") {
-  return tmdb(`/${type}/${tmdbId}/watch/providers`, undefined, { revalidate: 600 });
+
+export async function fetchTmdbProviders(
+  tmdbId: number | string,
+  type: "movie" | "tv"
+) {
+  return tmdb(`/${type}/${tmdbId}/watch/providers`, undefined, {
+    revalidate: 600,
+  });
 }
 
-// Detail (movie-specific)
+// Movie-specific helpers
 export async function getMovieDetails(id: number) {
   return tmdb(`/movie/${id}`, undefined, { revalidate: 300 });
 }
+
 export async function getMovieVideos(id: number) {
   return tmdb(`/movie/${id}/videos`, undefined, { revalidate: 300 });
 }
+
 export async function getMovieCredits(id: number) {
   return tmdb(`/movie/${id}/credits`, undefined, { revalidate: 300 });
 }
+
 export async function getSimilarMovies(id: number, page = 1) {
   return tmdb(`/movie/${id}/similar`, { page }, { revalidate: 300 });
+}
+
+// Watchmode bridge
+export async function searchWatchmodeByTmdb(tmdbId: number) {
+  const apiKey = process.env.WATCHMODE_API_KEY;
+  if (!apiKey) return null;
+
+  const url =
+    `https://api.watchmode.com/v1/search/` +
+    `?apiKey=${apiKey}` +
+    `&search_field=tmdb_id` +
+    `&search_value=${tmdbId}`;
+
+  const res = await fetch(url, { next: { revalidate: 3600 } });
+  if (!res.ok) return null;
+
+  return res.json();
 }

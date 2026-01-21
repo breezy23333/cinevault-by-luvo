@@ -12,10 +12,15 @@ type SearchParams = {
   dir?: "next" | "prev";
 };
 
-export default async function AdminMessages(props: {
-  searchParams: Promise<SearchParams>;
+export default async function AdminMessages({
+  searchParams,
+}: {
+  searchParams: {
+    q?: string;
+    cursor?: string;
+    dir?: "next" | "prev";
+  };
 }) {
-  const searchParams = await props.searchParams;
 
   const q = (searchParams.q || "").trim();
   const dir: "next" | "prev" =

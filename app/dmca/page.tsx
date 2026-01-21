@@ -30,6 +30,3 @@ export default function Page() {
     </main>
   );
 }
-
-/* force ESM */
-export {};

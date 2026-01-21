@@ -1,7 +1,7 @@
-export default async function Page(props: {
-  params: Promise<{ slug: string }>;
-}) {
-  const { slug } = await props.params;
+// app/genre/[slug]/page.tsx
+
+export default function Page(props: any) {
+  const slug = props?.params?.slug;
 
   return (
     <main className="p-6">
@@ -10,10 +10,3 @@ export default async function Page(props: {
   );
 }
 
-type PageProps<T> = {
-  params: Promise<T>;
-};
-
-export default async function Page(props: PageProps<{ id: string }>) {
-  const { id } = await props.params;
-}

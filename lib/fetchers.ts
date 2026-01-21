@@ -1,4 +1,4 @@
-// lib/fetchers.ts — unified + robust TMDB client (CLEAN)
+// lib/fetchers.ts — unified + robust TMDB client (FINAL)
 
 const BASE = "https://api.themoviedb.org/3";
 
@@ -18,7 +18,7 @@ const MAX_RETRIES = Number(process.env.TMDB_RETRIES || 1);
    Helpers
 ----------------------------------------- */
 
-function toURL(path: string, params?: Record<string, any>) {
+function toURL(path: string, params?: Record<string, unknown>) {
   const url = new URL(`${BASE}${path}`);
   for (const [k, v] of Object.entries(params || {})) {
     if (v !== undefined && v !== null && v !== "") {
@@ -57,7 +57,7 @@ function isNonCritical(path: string) {
 
 async function tmdb(
   path: string,
-  params?: Record<string, any>,
+  params?: Record<string, unknown>,
   {
     revalidate = 300,
     timeoutMs = DEFAULT_TIMEOUT,
@@ -67,12 +67,12 @@ async function tmdb(
     throw new Error("TMDB credentials missing");
   }
 
-  const headers = TMDB_BEARER
+  const headers: HeadersInit = TMDB_BEARER
     ? { Authorization: `Bearer ${TMDB_BEARER}`, Accept: "application/json" }
     : { Accept: "application/json" };
 
   const url = toURL(path, params);
-  let lastErr: any;
+  let lastError: unknown;
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
@@ -93,14 +93,13 @@ async function tmdb(
       }
 
       return await res.json();
-    } catch (err: any) {
-      lastErr = err;
+    } catch (err) {
+      lastError = err;
 
+      const msg = String((err as Error)?.message || err);
       const isNetwork =
-        err?.name === "AbortError" ||
-        /timeout|fetch failed|ECONN|ENOTFOUND|UND_ERR/i.test(
-          String(err?.message)
-        );
+        (err as Error)?.name === "AbortError" ||
+        /timeout|fetch failed|ECONN|ENOTFOUND|UND_ERR/i.test(msg);
 
       if (isNetwork && attempt < MAX_RETRIES) {
         await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
@@ -115,7 +114,7 @@ async function tmdb(
     }
   }
 
-  throw lastErr;
+  throw lastError;
 }
 
 /* ----------------------------------------
@@ -171,7 +170,7 @@ export async function getMovieGenres() {
     { language: "en-US" },
     { revalidate: 360 }
   );
-  return Array.isArray(data?.genres) ? data.genres : [];
+  return Array.isArray((data as any)?.genres) ? (data as any).genres : [];
 }
 
 // Movie / TV details

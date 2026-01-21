@@ -1,36 +1,30 @@
-// app/admin/messages/page.tsx
 import { prisma } from "@/lib/db";
 import type { Prisma } from "@prisma/client";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
+
 const PAGE_SIZE = 20;
 
-const fmt = new Intl.DateTimeFormat("en-ZA", {
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-  hour12: false,
-});
-
-type PageProps = {
-  searchParams: Promise<{
-    q?: string;
-    cursor?: string;
-    dir?: "next" | "prev";
-  }>;
+type SearchParams = {
+  q?: string;
+  cursor?: string;
+  dir?: "next" | "prev";
 };
 
-export default async function AdminMessages({ searchParams }: PageProps) {
-  const sp = await searchParams;
+export default async function AdminMessages(props: {
+  searchParams: Promise<SearchParams>;
+}) {
+  const searchParams = await props.searchParams;
 
-  const q = (sp?.q ?? "").trim();
-  const dir: "next" | "prev" = sp?.dir === "prev" ? "prev" : "next";
-  const cursorId = Number(sp?.cursor || 0) || undefined;
+  const q = (searchParams.q || "").trim();
+  const dir: "next" | "prev" =
+    searchParams.dir === "prev" ? "prev" : "next";
 
-  // --- Typed search filter
+  const cursorId = searchParams.cursor
+    ? Number(searchParams.cursor)
+    : undefined;
+
   const where: Prisma.ContactMessageWhereInput = q
     ? {
         OR: [
@@ -43,11 +37,12 @@ export default async function AdminMessages({ searchParams }: PageProps) {
       }
     : {};
 
-  // --- Cursor pagination
-  let idFilter: Prisma.IntFilter | undefined;
-  if (cursorId) {
-    idFilter = dir === "next" ? { lt: cursorId } : { gt: cursorId };
-  }
+  const idFilter =
+    cursorId && dir === "next"
+      ? { lt: cursorId }
+      : cursorId && dir === "prev"
+      ? { gt: cursorId }
+      : undefined;
 
   const items = await prisma.contactMessage.findMany({
     where: idFilter ? { ...where, id: idFilter } : where,
@@ -55,120 +50,54 @@ export default async function AdminMessages({ searchParams }: PageProps) {
     take: PAGE_SIZE,
   });
 
-  const prevCursor = items.length ? items[0].id : undefined;
-  const nextCursor = items.length ? items[items.length - 1].id : undefined;
+  const prevCursor = items.at(0)?.id;
+  const nextCursor = items.at(-1)?.id;
 
   return (
     <main className="mx-auto max-w-6xl p-6">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold">Contact Messages</h1>
-
-        <div className="flex items-center gap-2">
-          <form action="/admin/messages" method="get" className="flex gap-2">
-            <input
-              name="q"
-              defaultValue={q}
-              placeholder="Search name, email, subject…"
-              className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200"
-            />
-            <button className="rounded-lg border border-zinc-700 px-3 py-2 text-sm hover:bg-zinc-800">
-              Search
-            </button>
-          </form>
-
-          <Link
-            href={`/api/admin/messages/export${q ? `?q=${encodeURIComponent(q)}` : ""}`}
-            className="rounded-lg border border-zinc-700 px-3 py-2 text-sm hover:bg-zinc-800"
-          >
-            Export CSV
-          </Link>
-
-          <Link
-            href="/"
-            className="rounded-lg border border-zinc-700 px-3 py-2 text-sm hover:bg-zinc-800"
-          >
-            Back to site
-          </Link>
-        </div>
-      </div>
+      <h1 className="mb-6 text-2xl font-semibold">Contact Messages</h1>
 
       {items.length === 0 ? (
         <p className="text-zinc-500">No messages.</p>
       ) : (
         <>
-          <div className="overflow-x-auto rounded-2xl border border-zinc-800">
-            <table className="min-w-full text-sm">
-              <thead className="bg-zinc-900/60">
-                <tr className="[&>th]:px-4 [&>th]:py-3 text-left">
-                  <th>Date</th>
-                  <th>Name</th>
-                  <th>Email / Phone</th>
-                  <th>Subject</th>
-                  <th>Message</th>
-                  <th>IP</th>
-                  <th />
+          <table className="w-full text-sm border border-zinc-800 rounded-xl overflow-hidden">
+            <thead className="bg-zinc-900">
+              <tr>
+                <th className="p-3 text-left">Name</th>
+                <th className="p-3 text-left">Email</th>
+                <th className="p-3 text-left">Subject</th>
+                <th className="p-3 text-left">Message</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((m) => (
+                <tr key={m.id} className="border-t border-zinc-800">
+                  <td className="p-3">{m.name}</td>
+                  <td className="p-3">{m.email}</td>
+                  <td className="p-3">{m.subject}</td>
+                  <td className="p-3 max-w-[40ch] whitespace-pre-wrap">
+                    {m.message}
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="[&>tr:nth-child(even)]:bg-zinc-900/30">
-                {items.map((m) => (
-                  <tr key={m.id} className="[&>td]:px-4 [&>td]:py-3 align-top">
-                    <td title={m.createdAt.toISOString()}>
-                      {fmt.format(m.createdAt)}
-                    </td>
-                    <td className="font-medium">{m.name}</td>
-                    <td>
-                      <div>{m.email}</div>
-                      <div className="text-zinc-400">{m.phone || "—"}</div>
-                    </td>
-                    <td className="font-medium">{m.subject}</td>
-                    <td className="max-w-[40ch] whitespace-pre-wrap">
-                      {m.message}
-                    </td>
-                    <td className="text-zinc-400">{m.ip || "—"}</td>
-                    <td className="text-right">
-                      <form
-                        action={`/api/admin/messages/${m.id}`}
-                        method="post"
-                        onSubmit={(e) => {
-                          if (!confirm("Delete this message?")) e.preventDefault();
-                        }}
-                      >
-                        <input type="hidden" name="_method" value="DELETE" />
-                        <button className="rounded-lg border border-rose-500/40 px-3 py-1.5 text-rose-400 hover:bg-rose-500/10">
-                          Delete
-                        </button>
-                      </form>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+              ))}
+            </tbody>
+          </table>
 
           <div className="mt-4 flex justify-between">
-            <span className="text-xs text-zinc-500">
-              Showing {items.length} results
-            </span>
+            <Link
+              href={`/admin/messages?dir=prev${prevCursor ? `&cursor=${prevCursor}` : ""}`}
+              className="border px-3 py-1 rounded"
+            >
+              ◀ Prev
+            </Link>
 
-            <div className="flex gap-2">
-              <Link
-                href={`/admin/messages?dir=prev${q ? `&q=${encodeURIComponent(q)}` : ""}${
-                  prevCursor ? `&cursor=${prevCursor}` : ""
-                }`}
-                className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm hover:bg-zinc-800"
-              >
-                ◀ Prev
-              </Link>
-
-              <Link
-                href={`/admin/messages?dir=next${q ? `&q=${encodeURIComponent(q)}` : ""}${
-                  nextCursor ? `&cursor=${nextCursor}` : ""
-                }`}
-                className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm hover:bg-zinc-800"
-              >
-                Next ▶
-              </Link>
-            </div>
+            <Link
+              href={`/admin/messages?dir=next${nextCursor ? `&cursor=${nextCursor}` : ""}`}
+              className="border px-3 py-1 rounded"
+            >
+              Next ▶
+            </Link>
           </div>
         </>
       )}

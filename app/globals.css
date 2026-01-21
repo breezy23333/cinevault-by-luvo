@@ -1,0 +1,28 @@
+/* style/globals.css */
+@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Put custom classes in a Tailwind layer so JIT/purge keeps them */
+@layer utilities {
+  /* dark glass helper */
+  .surface-dark {
+    @apply rounded-2xl bg-white/5 ring-1 ring-white/10;
+  }
+
+  /* hide scrollbars (keeps scrolling) */
+  .hide-scrollbar::-webkit-scrollbar { display: none; }
+  .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+}
+
+/* Base element tweaks */
+html, body { height: 100%; }
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Links */
+a { text-decoration: none; color: inherit; }
+a:hover { text-decoration: underline; }

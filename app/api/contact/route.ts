@@ -67,7 +67,8 @@ export async function POST(req: Request) {
 
     try {
       await prisma.contactMessage.create({
-        data: { name, email, subject, content: message, phone: phone || null, ip, ua },
+        data: { name, email, subject, message, phone: phone || null, ip, ua },
+
       });
       saved = true;
       console.log("[CONTACT] saved row");

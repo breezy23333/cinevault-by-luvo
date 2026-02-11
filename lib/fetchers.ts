@@ -25,7 +25,7 @@ if (!TMDB_BEARER && !TMDB_V3) {
 const FAST_TIMEOUT = 4000;
 
 // Detail pages: more patient
-const SLOW_TIMEOUT = Number(process.env.TMDB_TIMEOUT_MS || 15000);
+const SLOW_TIMEOUT = 20000;
 
 /* ----------------------------------------
    HELPERS
@@ -107,18 +107,25 @@ async function tmdbSafe(
   params?: Record<string, unknown>,
   revalidate = 300
 ) {
-  const res = await fetchAbortable(
-    buildURL(path, params),
-    { headers: headers(), next: { revalidate } },
-    SLOW_TIMEOUT
-  );
+  try {
+    const res = await fetchAbortable(
+      buildURL(path, params),
+      { headers: headers(), next: { revalidate } },
+      SLOW_TIMEOUT
+    );
 
-  if (!res.ok) {
-    throw new Error(`TMDB ${res.status} — ${path}`);
+    if (!res.ok) {
+      console.warn(`TMDB ${res.status} — ${path}`);
+      return null;
+    }
+
+    return await res.json();
+  } catch (err) {
+    console.warn(`TMDB SAFE FAILED — ${path}`);
+    return null; // ← prevents crash
   }
-
-  return res.json();
 }
+
 
 /* ----------------------------------------
    HOME / LISTINGS (FAST)

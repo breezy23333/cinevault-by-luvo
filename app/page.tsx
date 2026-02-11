@@ -7,6 +7,16 @@ import {
   getMovieGenres,
 } from "@/lib/fetchers";
 
+type Featured = {
+  id: number;
+  title: string;
+  media: "movie" | "tv";
+  year: string;
+  backdrop: string | null;
+  poster: string | null;
+};
+
+
 import HeroCarousel from "@/components/HeroCarousel";
 import CategoriesTray from "@/components/CategoriesTray";
 import dynamicImport from "next/dynamic";

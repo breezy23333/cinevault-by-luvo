@@ -30,7 +30,7 @@ export default async function AdminMessages({
     ? Number(searchParams.cursor)
     : undefined;
 
- const where: Prisma.ContactMessageWhereInput = q
+const where = q
   ? {
       OR: [
         { name: { contains: q } },
@@ -41,6 +41,7 @@ export default async function AdminMessages({
       ],
     }
   : {};
+
 
 
   const idFilter =

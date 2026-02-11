@@ -1,8 +1,11 @@
-// lib/fetchers.ts — unified + robust TMDB client (FINAL)
+// lib/fetchers.ts — FAST + ROBUST TMDB client (FINAL)
 
 const BASE = "https://api.themoviedb.org/3";
 
-// Prefer v4 bearer; fall back to v3 key
+/* ----------------------------------------
+   AUTH
+----------------------------------------- */
+
 const TMDB_BEARER =
   process.env.TMDB_BEARER ||
   process.env.TMDB_TOKEN ||
@@ -10,135 +13,143 @@ const TMDB_BEARER =
 
 const TMDB_V3 = process.env.TMDB_API_KEY;
 
-// Tunables
-const DEFAULT_TIMEOUT = Number(process.env.TMDB_TIMEOUT_MS || 20000);
-const MAX_RETRIES = Number(process.env.TMDB_RETRIES || 1);
+if (!TMDB_BEARER && !TMDB_V3) {
+  throw new Error("TMDB credentials missing");
+}
 
 /* ----------------------------------------
-   Helpers
+   SPEED TUNING
 ----------------------------------------- */
 
-function toURL(path: string, params?: Record<string, unknown>) {
+// Home page: fail fast
+const FAST_TIMEOUT = 4000;
+
+// Detail pages: more patient
+const SLOW_TIMEOUT = Number(process.env.TMDB_TIMEOUT_MS || 15000);
+
+/* ----------------------------------------
+   HELPERS
+----------------------------------------- */
+
+function buildURL(path: string, params?: Record<string, unknown>) {
   const url = new URL(`${BASE}${path}`);
-  for (const [k, v] of Object.entries(params || {})) {
+
+  Object.entries(params || {}).forEach(([k, v]) => {
     if (v !== undefined && v !== null && v !== "") {
       url.searchParams.set(k, String(v));
     }
-  }
+  });
+
   if (!TMDB_BEARER && TMDB_V3 && !url.searchParams.has("api_key")) {
     url.searchParams.set("api_key", TMDB_V3);
   }
+
   return url.toString();
 }
 
-async function fetchWithTimeout(
+function headers(): HeadersInit {
+  return TMDB_BEARER
+    ? { Authorization: `Bearer ${TMDB_BEARER}`, Accept: "application/json" }
+    : { Accept: "application/json" };
+}
+
+async function fetchAbortable(
   url: string,
   init: RequestInit,
   timeoutMs: number
 ) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const t = setTimeout(() => controller.abort(), timeoutMs);
+
   try {
     return await fetch(url, { ...init, signal: controller.signal });
   } finally {
-    clearTimeout(timer);
+    clearTimeout(t);
   }
 }
 
-function isNonCritical(path: string) {
-  return /\/(videos|images|credits|similar|recommendations|watch\/providers)\b/.test(
-    path
-  );
-}
-
 /* ----------------------------------------
-   Core TMDB fetcher (SINGLE definition)
+   FAST FETCHER (HOME PAGE)
+   - no retries
+   - short timeout
+   - silent failure
 ----------------------------------------- */
 
-async function tmdb(
+async function tmdbFast(
   path: string,
   params?: Record<string, unknown>,
-  {
-    revalidate = 300,
-    timeoutMs = DEFAULT_TIMEOUT,
-  }: { revalidate?: number; timeoutMs?: number } = {}
+  revalidate = 300
 ) {
-  if (!TMDB_BEARER && !TMDB_V3) {
-    throw new Error("TMDB credentials missing");
+  try {
+    const res = await fetchAbortable(
+      buildURL(path, params),
+      { headers: headers(), next: { revalidate } },
+      FAST_TIMEOUT
+    );
+
+    if (!res.ok) {
+  console.warn(`TMDB ${res.status} — ${path}`);
+  return null;
+}
+return res.json();
+
+  } catch {
+    return { results: [] };
   }
-
-  const headers: HeadersInit = TMDB_BEARER
-    ? { Authorization: `Bearer ${TMDB_BEARER}`, Accept: "application/json" }
-    : { Accept: "application/json" };
-
-  const url = toURL(path, params);
-  let lastError: unknown;
-
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      const res = await fetchWithTimeout(
-        url,
-        { headers, next: { revalidate } },
-        timeoutMs
-      );
-
-      if (!res.ok) {
-        if (
-          (res.status === 404 || res.status === 408) &&
-          isNonCritical(path)
-        ) {
-          return { results: [] };
-        }
-        throw new Error(`TMDB ${res.status} — ${path}`);
-      }
-
-      return await res.json();
-    } catch (err) {
-      lastError = err;
-
-      const msg = String((err as Error)?.message || err);
-      const isNetwork =
-        (err as Error)?.name === "AbortError" ||
-        /timeout|fetch failed|ECONN|ENOTFOUND|UND_ERR/i.test(msg);
-
-      if (isNetwork && attempt < MAX_RETRIES) {
-        await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
-        continue;
-      }
-
-      if (isNetwork && isNonCritical(path)) {
-        return { results: [] };
-      }
-
-      throw err;
-    }
-  }
-
-  throw lastError;
 }
 
 /* ----------------------------------------
-   PUBLIC EXPORTS
+   ROBUST FETCHER (DETAIL PAGES)
 ----------------------------------------- */
 
-// Home / listings
+async function tmdbSafe(
+  path: string,
+  params?: Record<string, unknown>,
+  revalidate = 300
+) {
+  const res = await fetchAbortable(
+    buildURL(path, params),
+    { headers: headers(), next: { revalidate } },
+    SLOW_TIMEOUT
+  );
+
+  if (!res.ok) {
+    throw new Error(`TMDB ${res.status} — ${path}`);
+  }
+
+  return res.json();
+}
+
+/* ----------------------------------------
+   HOME / LISTINGS (FAST)
+----------------------------------------- */
+
+// ⚡ FAST — MOVIES ONLY (Hero loads quicker)
 export async function getTrendingAll(page = 1) {
-  return tmdb("/trending/all/day", { page }, { revalidate: 120 });
+  return tmdbFast("/trending/movie/day", { page }, 600);
 }
 
 export async function getPopularMovies(page = 1) {
-  return tmdb("/movie/popular", { page }, { revalidate: 120 });
+  return tmdbFast("/movie/popular", { page }, 600);
+}
+
+export async function getMovieGenres() {
+  const data = await tmdbFast("/genre/movie/list", {}, 86400);
+  return Array.isArray((data as any)?.genres) ? data.genres : [];
 }
 
 export async function searchTitles(q: string, page = 1) {
-  return tmdb(
+  return tmdbFast(
     "/search/multi",
     { query: q, include_adult: false, page },
-    { revalidate: 60 }
+    120
   );
 }
 
-// Discover + genres
+/* ----------------------------------------
+   DISCOVER
+----------------------------------------- */
+
 export type DiscoverParams = {
   year?: number;
   genreId?: number;
@@ -150,7 +161,7 @@ export async function discoverMovies({
   genreId,
   page = 1,
 }: DiscoverParams = {}) {
-  return tmdb(
+  return tmdbFast(
     "/discover/movie",
     {
       include_adult: false,
@@ -160,26 +171,20 @@ export async function discoverMovies({
       with_genres: genreId ? String(genreId) : undefined,
       primary_release_year: year ? String(year) : undefined,
     },
-    { revalidate: 120 }
+    600
   );
 }
 
-export async function getMovieGenres() {
-  const data = await tmdb(
-    "/genre/movie/list",
-    { language: "en-US" },
-    { revalidate: 360 }
-  );
-  return Array.isArray((data as any)?.genres) ? (data as any).genres : [];
-}
+/* ----------------------------------------
+   DETAIL PAGES (ROBUST)
+----------------------------------------- */
 
-// Movie / TV details
 export async function fetchTmdbTitle(
   tmdbId: number | string,
   type: "movie" | "tv",
   opts?: { language?: string }
 ) {
-  return tmdb(
+  return tmdbSafe(
     `/${type}/${tmdbId}`,
     {
       language: opts?.language || "en-US",
@@ -187,7 +192,7 @@ export async function fetchTmdbTitle(
         "videos,images,credits,external_ids,release_dates,content_ratings,recommendations,similar",
       include_image_language: "en,null",
     },
-    { revalidate: 300 }
+    300
   );
 }
 
@@ -195,41 +200,46 @@ export async function fetchTmdbProviders(
   tmdbId: number | string,
   type: "movie" | "tv"
 ) {
-  return tmdb(`/${type}/${tmdbId}/watch/providers`, undefined, {
-    revalidate: 600,
-  });
+  return tmdbSafe(`/${type}/${tmdbId}/watch/providers`, undefined, 600);
 }
 
-// Movie-specific helpers
 export async function getMovieDetails(id: number) {
-  return tmdb(`/movie/${id}`, undefined, { revalidate: 300 });
+  return tmdbSafe(`/movie/${id}`, undefined, 300);
 }
 
 export async function getMovieVideos(id: number) {
-  return tmdb(`/movie/${id}/videos`, undefined, { revalidate: 300 });
+  return tmdbSafe(`/movie/${id}/videos`, undefined, 300);
 }
 
 export async function getMovieCredits(id: number) {
-  return tmdb(`/movie/${id}/credits`, undefined, { revalidate: 300 });
+  return tmdbSafe(`/movie/${id}/credits`, undefined, 300);
 }
 
 export async function getSimilarMovies(id: number, page = 1) {
-  return tmdb(`/movie/${id}/similar`, { page }, { revalidate: 300 });
+  return tmdbSafe(`/movie/${id}/similar`, { page }, 300);
 }
 
-// Watchmode bridge
+// ✅ RECOMMENDED MOVIES
+export async function getRecommendedMovies(id: number, page = 1) {
+  return tmdbSafe(`/movie/${id}/recommendations`, { page }, 300);
+}
+
+/* ----------------------------------------
+   WATCHMODE (NON-BLOCKING)
+----------------------------------------- */
+
 export async function searchWatchmodeByTmdb(tmdbId: number) {
   const apiKey = process.env.WATCHMODE_API_KEY;
   if (!apiKey) return null;
 
-  const url =
-    `https://api.watchmode.com/v1/search/` +
-    `?apiKey=${apiKey}` +
-    `&search_field=tmdb_id` +
-    `&search_value=${tmdbId}`;
-
-  const res = await fetch(url, { next: { revalidate: 3600 } });
-  if (!res.ok) return null;
-
-  return res.json();
+  try {
+    const res = await fetch(
+      `https://api.watchmode.com/v1/search/?apiKey=${apiKey}&search_field=tmdb_id&search_value=${tmdbId}`,
+      { next: { revalidate: 3600 } }
+    );
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
 }

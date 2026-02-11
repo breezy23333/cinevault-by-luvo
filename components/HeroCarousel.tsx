@@ -51,6 +51,7 @@ export default function HeroCarousel({
             src={cur.backdrop}
             alt={cur.title}
             fill
+            fetchPriority="high"
             sizes="(max-width: 768px) 100vw, 80vw"
             priority={i === 0}                 // ✅ first hero only
             loading={i === 0 ? "eager" : "lazy"}

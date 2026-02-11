@@ -42,8 +42,6 @@ const where = q
     }
   : {};
 
-
-
  const items = await prisma.contactMessage.findMany({
   where,
   orderBy: { createdAt: "desc" },
@@ -78,8 +76,8 @@ const where = q
                   <td className="p-3">{m.email}</td>
                   <td className="p-3">{m.subject}</td>
                   <td className="p-3 max-w-[40ch] whitespace-pre-wrap">
-                    {m.message}
-                  </td>
+                  {m.subject}
+                </td>
                 </tr>
               ))}
             </tbody>

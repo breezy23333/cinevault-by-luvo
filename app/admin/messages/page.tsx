@@ -30,17 +30,18 @@ export default async function AdminMessages({
     ? Number(searchParams.cursor)
     : undefined;
 
-  const where: Prisma.ContactMessageWhereInput = q
-    ? {
-        OR: [
-          { name: { contains: q, mode: "insensitive" } },
-          { email: { contains: q, mode: "insensitive" } },
-          { subject: { contains: q, mode: "insensitive" } },
-          { message: { contains: q, mode: "insensitive" } },
-          { phone: { contains: q, mode: "insensitive" } },
-        ],
-      }
-    : {};
+ const where: Prisma.ContactMessageWhereInput = q
+  ? {
+      OR: [
+        { name: { contains: q } },
+        { email: { contains: q } },
+        { subject: { contains: q } },
+        { message: { contains: q } },
+        { phone: { contains: q } },
+      ],
+    }
+  : {};
+
 
   const idFilter =
     cursorId && dir === "next"

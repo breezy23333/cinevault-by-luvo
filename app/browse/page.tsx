@@ -1,5 +1,8 @@
+import AdvancedBrowse from "@/components/AdvancedBrowse";
+import UpgradePrompt from "@/components/UpgradePrompt";
 import { getCurrentPlan } from "@/lib/usePlan";
 import { PLANS } from "@/lib/plans";
+
 
 export default function BrowsePage() {
   const plan = getCurrentPlan();
@@ -14,3 +17,4 @@ export default function BrowsePage() {
     </main>
   );
 }
+

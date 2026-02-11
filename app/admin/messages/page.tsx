@@ -44,19 +44,13 @@ const where = q
 
 
 
-  const idFilter =
-    cursorId && dir === "next"
-      ? { lt: cursorId }
-      : cursorId && dir === "prev"
-      ? { gt: cursorId }
-      : undefined;
+ const items = await prisma.contactMessage.findMany({
+  where,
+  orderBy: { createdAt: "desc" },
+  take: PAGE_SIZE,
+});
 
-  const items = await prisma.contactMessage.findMany({
-    where: idFilter ? { ...where, id: idFilter } : where,
-    orderBy: { id: "desc" },
-    take: PAGE_SIZE,
-  });
-
+ 
   const prevCursor = items.at(0)?.id;
   const nextCursor = items.at(-1)?.id;
 
